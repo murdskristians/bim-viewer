@@ -4,9 +4,18 @@ import { Box } from '@mui/material'
 import { useThreeScene } from '../hooks/useThreeScene'
 import { loadIFCFile, getElementProperties, getIFCLoader } from '../utils/ifcLoader'
 import { loadGLTFFile } from '../utils/gltfLoader'
+import {
+  createSampleHouse,
+  setFloorVisibility,
+  getCameraPositionForFloor,
+  getCameraTargetForFloor,
+} from '../utils/sampleHouse'
 import { Toolbar } from './Toolbar'
 import { PropertiesPanel } from './PropertiesPanel'
 import { ModelList } from './ModelList'
+import { FloorSelector } from './FloorSelector'
+import { RvtHelpDialog } from './RvtHelpDialog'
+import { CameraControls } from './CameraControls'
 import type { LoadedModel, ElementProperties, IFCModel } from '../types/bim'
 
 const HIGHLIGHT_MATERIAL = new THREE.MeshBasicMaterial({
@@ -23,9 +32,64 @@ export function Viewer() {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(true)
 
+  // Sample house state
+  const [sampleHouseLoaded, setSampleHouseLoaded] = useState(false)
+  const [availableFloors, setAvailableFloors] = useState<number[]>([])
+  const [selectedFloors, setSelectedFloors] = useState<number[]>([1, 2, 3])
+  const floorsRef = useRef<THREE.Group[]>([])
+
+  // RVT dialog state
+  const [rvtDialogOpen, setRvtDialogOpen] = useState(false)
+  const [rvtFileName, setRvtFileName] = useState<string | undefined>()
+
   const highlightedRef = useRef<THREE.Object3D | null>(null)
 
-  const { containerRef, scene, camera, fitCameraToObject } = useThreeScene()
+  const { containerRef, scene, camera, controls, fitCameraToObject, activeMovement } = useThreeScene()
+
+  // Handle loading sample house
+  const handleLoadSample = useCallback(() => {
+    if (!scene || !camera || !controls || sampleHouseLoaded) return
+
+    const { house, floors } = createSampleHouse()
+    scene.add(house)
+
+    floorsRef.current = floors
+    setAvailableFloors([1, 2, 3])
+    setSelectedFloors([1, 2, 3])
+    setSampleHouseLoaded(true)
+
+    // Position camera to see inside the house (slightly elevated, looking at center)
+    const cameraPos = getCameraPositionForFloor(1)
+    const cameraTarget = getCameraTargetForFloor(1)
+
+    camera.position.copy(cameraPos)
+    controls.target.copy(cameraTarget)
+    controls.update()
+
+    // Add to models list
+    const newModel: LoadedModel = {
+      id: 'sample-house',
+      name: 'Sample House',
+      type: 'gltf',
+      object: house,
+      visible: true,
+    }
+    setModels((prev) => [...prev, newModel])
+  }, [scene, camera, controls, sampleHouseLoaded])
+
+  // Handle floor selection change
+  const handleFloorChange = useCallback((floors: number[]) => {
+    setSelectedFloors(floors)
+    setFloorVisibility(floorsRef.current, floors)
+
+    // Move camera to focus on the lowest selected floor
+    if (floors.length > 0 && camera && controls) {
+      const lowestFloor = Math.min(...floors)
+      const cameraTarget = getCameraTargetForFloor(lowestFloor)
+      controls.target.copy(cameraTarget)
+      controls.update()
+    }
+  }, [camera, controls])
 
   // Handle IFC model loading
   const handleLoadIFC = useCallback(async (file: File) => {
@@ -93,21 +157,26 @@ export function Viewer() {
     }
   }, [scene, fitCameraToObject])
 
+  // Handle RVT file detection
+  const handleRvtDetected = useCallback((fileName: string) => {
+    setRvtFileName(fileName)
+    setRvtDialogOpen(true)
+  }, [])
+
   // Handle model visibility toggle
   const handleToggleVisibility = useCallback((modelId: string) => {
     setModels((prev) =>
-      prev.map((model) =>
-        model.id === modelId
-          ? { ...model, visible: !model.visible, object: { ...model.object, visible: !model.visible } as typeof model.object }
-          : model
-      )
+      prev.map((model) => {
+        if (model.id === modelId) {
+          const newVisible = !model.visible
+          // Directly set the Three.js object visibility
+          model.object.visible = newVisible
+          return { ...model, visible: newVisible }
+        }
+        return model
+      })
     )
-
-    const model = models.find((m) => m.id === modelId)
-    if (model) {
-      model.object.visible = !model.visible
-    }
-  }, [models])
+  }, [])
 
   // Handle model removal
   const handleRemoveModel = useCallback((modelId: string) => {
@@ -115,6 +184,14 @@ export function Viewer() {
     if (model && scene) {
       scene.remove(model.object)
       setModels((prev) => prev.filter((m) => m.id !== modelId))
+
+      // If removing sample house, reset floor state
+      if (modelId === 'sample-house') {
+        setSampleHouseLoaded(false)
+        setAvailableFloors([])
+        setSelectedFloors([1, 2, 3])
+        floorsRef.current = []
+      }
 
       // Clear selection if the removed model contained the selected element
       setSelectedElement(null)
@@ -198,7 +275,7 @@ export function Viewer() {
         }
       }
 
-      // No IFC element hit - check glTF models for basic info
+      // No IFC element hit - check glTF/sample models for basic info
       const gltfObjects = models
         .filter((m) => m.type === 'gltf' && m.visible)
         .map((m) => m.object)
@@ -237,19 +314,25 @@ export function Viewer() {
       <Toolbar
         onLoadIFC={handleLoadIFC}
         onLoadGLTF={handleLoadGLTF}
+        onLoadSample={handleLoadSample}
+        onRvtDetected={handleRvtDetected}
         onToggleProperties={() => setPropertiesPanelOpen(!propertiesPanelOpen)}
         isLoading={isLoading}
         loadingProgress={loadingProgress}
         propertiesPanelOpen={propertiesPanelOpen}
+        hasSampleLoaded={sampleHouseLoaded}
       />
 
       <Box sx={{ display: 'flex', flex: 1, position: 'relative', overflow: 'hidden' }}>
         <Box
           ref={containerRef}
           sx={{
-            flex: 1,
-            transition: 'margin-right 0.3s',
-            marginRight: propertiesPanelOpen ? '360px' : 0,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: propertiesPanelOpen ? '360px' : 0,
+            bottom: 0,
+            transition: 'right 0.3s',
           }}
         />
 
@@ -259,12 +342,32 @@ export function Viewer() {
           onRemove={handleRemoveModel}
         />
 
+        {sampleHouseLoaded && (
+          <FloorSelector
+            floors={availableFloors}
+            selectedFloors={selectedFloors}
+            onFloorChange={handleFloorChange}
+          />
+        )}
+
+        <CameraControls
+          camera={camera}
+          controls={controls}
+          activeMovement={activeMovement}
+        />
+
         <PropertiesPanel
           open={propertiesPanelOpen}
           element={selectedElement}
           onClose={() => setPropertiesPanelOpen(false)}
         />
       </Box>
+
+      <RvtHelpDialog
+        open={rvtDialogOpen}
+        onClose={() => setRvtDialogOpen(false)}
+        fileName={rvtFileName}
+      />
     </Box>
   )
 }

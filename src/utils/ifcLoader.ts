@@ -7,7 +7,7 @@ export async function getIFCLoader(): Promise<IFCLoader> {
   if (ifcLoader) return ifcLoader
 
   ifcLoader = new IFCLoader()
-  await ifcLoader.ifcManager.setWasmPath('https://unpkg.com/web-ifc@0.0.74/')
+  await ifcLoader.ifcManager.setWasmPath('https://unpkg.com/web-ifc@0.0.39/')
 
   return ifcLoader
 }

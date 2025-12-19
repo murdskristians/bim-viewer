@@ -8,30 +8,39 @@ import {
   Tooltip,
   Box,
   CircularProgress,
+  Divider,
 } from '@mui/material'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import ViewInArIcon from '@mui/icons-material/ViewInAr'
 import InfoIcon from '@mui/icons-material/Info'
+import HomeIcon from '@mui/icons-material/Home'
 
 interface ToolbarProps {
   onLoadIFC: (file: File) => void
   onLoadGLTF: (file: File) => void
+  onLoadSample: () => void
+  onRvtDetected: (fileName: string) => void
   onToggleProperties: () => void
   isLoading: boolean
   loadingProgress: number
   propertiesPanelOpen: boolean
+  hasSampleLoaded: boolean
 }
 
 export function Toolbar({
   onLoadIFC,
   onLoadGLTF,
+  onLoadSample,
+  onRvtDetected,
   onToggleProperties,
   isLoading,
   loadingProgress,
   propertiesPanelOpen,
+  hasSampleLoaded,
 }: ToolbarProps) {
   const ifcInputRef = useRef<HTMLInputElement>(null)
   const gltfInputRef = useRef<HTMLInputElement>(null)
+  const rvtInputRef = useRef<HTMLInputElement>(null)
 
   const handleIFCChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -49,6 +58,14 @@ export function Toolbar({
     }
   }
 
+  const handleRvtChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      onRvtDetected(file.name)
+      event.target.value = ''
+    }
+  }
+
   return (
     <AppBar position="static" color="default" elevation={1}>
       <MuiToolbar>
@@ -57,7 +74,19 @@ export function Toolbar({
           BIM Viewer
         </Typography>
 
-        <Box sx={{ display: 'flex', gap: 1, flexGrow: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, flexGrow: 1, alignItems: 'center' }}>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={<HomeIcon />}
+            onClick={onLoadSample}
+            disabled={isLoading || hasSampleLoaded}
+          >
+            Load Sample
+          </Button>
+
+          <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+
           <input
             type="file"
             accept=".ifc"
@@ -88,6 +117,23 @@ export function Toolbar({
             disabled={isLoading}
           >
             Load glTF/GLB
+          </Button>
+
+          <input
+            type="file"
+            accept=".rvt"
+            ref={rvtInputRef}
+            style={{ display: 'none' }}
+            onChange={handleRvtChange}
+          />
+          <Button
+            variant="outlined"
+            color="warning"
+            startIcon={<UploadFileIcon />}
+            onClick={() => rvtInputRef.current?.click()}
+            disabled={isLoading}
+          >
+            Load RVT
           </Button>
 
           {isLoading && (
