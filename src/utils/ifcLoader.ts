@@ -40,6 +40,30 @@ export async function loadIFCFile(
   })
 }
 
+export async function loadIFCFromUrl(
+  url: string,
+  onProgress?: (progress: number) => void
+): Promise<IFCModel> {
+  const loader = await getIFCLoader()
+
+  return new Promise((resolve, reject) => {
+    loader.load(
+      url,
+      (model) => {
+        resolve(model)
+      },
+      (progress) => {
+        if (progress.total > 0) {
+          onProgress?.((progress.loaded / progress.total) * 100)
+        }
+      },
+      (error) => {
+        reject(error)
+      }
+    )
+  })
+}
+
 export async function getElementProperties(
   modelId: number,
   expressID: number

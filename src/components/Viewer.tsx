@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Box } from '@mui/material'
 import { useThreeScene } from '../hooks/useThreeScene'
-import { loadIFCFile, getElementProperties, getIFCLoader } from '../utils/ifcLoader'
+import { loadIFCFile, loadIFCFromUrl, getElementProperties, getIFCLoader } from '../utils/ifcLoader'
 import { loadGLTFFile } from '../utils/gltfLoader'
 import {
   createSampleHouse,
@@ -10,7 +10,7 @@ import {
   getCameraPositionForFloor,
   getCameraTargetForFloor,
 } from '../utils/sampleHouse'
-import { Toolbar } from './Toolbar'
+import { Toolbar, type SampleType } from './Toolbar'
 import { PropertiesPanel } from './PropertiesPanel'
 import { ModelList } from './ModelList'
 import { FloorSelector } from './FloorSelector'
@@ -25,6 +25,9 @@ const HIGHLIGHT_MATERIAL = new THREE.MeshBasicMaterial({
   depthTest: false,
 })
 
+// Sample IFC file path (in public folder)
+const SAMPLE_BUILDING_URL = '/samples/NICE_NP-REV1_BK_RevitServer.ifc'
+
 export function Viewer() {
   const [models, setModels] = useState<LoadedModel[]>([])
   const [selectedElement, setSelectedElement] = useState<ElementProperties | null>(null)
@@ -32,8 +35,8 @@ export function Viewer() {
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(true)
 
-  // Sample house state
-  const [sampleHouseLoaded, setSampleHouseLoaded] = useState(false)
+  // Sample state - track which samples are loaded
+  const [loadedSamples, setLoadedSamples] = useState<SampleType[]>([])
   const [availableFloors, setAvailableFloors] = useState<number[]>([])
   const [selectedFloors, setSelectedFloors] = useState<number[]>([1, 2, 3])
   const floorsRef = useRef<THREE.Group[]>([])
@@ -46,9 +49,9 @@ export function Viewer() {
 
   const { containerRef, scene, camera, controls, fitCameraToObject, activeMovement } = useThreeScene()
 
-  // Handle loading sample house
-  const handleLoadSample = useCallback(() => {
-    if (!scene || !camera || !controls || sampleHouseLoaded) return
+  // Handle loading sample house (3D generated)
+  const handleLoadSampleHouse = useCallback(() => {
+    if (!scene || !camera || !controls || loadedSamples.includes('house')) return
 
     const { house, floors } = createSampleHouse()
     scene.add(house)
@@ -56,9 +59,8 @@ export function Viewer() {
     floorsRef.current = floors
     setAvailableFloors([1, 2, 3])
     setSelectedFloors([1, 2, 3])
-    setSampleHouseLoaded(true)
+    setLoadedSamples((prev) => [...prev, 'house'])
 
-    // Position camera to see inside the house (slightly elevated, looking at center)
     const cameraPos = getCameraPositionForFloor(1)
     const cameraTarget = getCameraTargetForFloor(1)
 
@@ -66,7 +68,6 @@ export function Viewer() {
     controls.target.copy(cameraTarget)
     controls.update()
 
-    // Add to models list
     const newModel: LoadedModel = {
       id: 'sample-house',
       name: 'Sample House',
@@ -75,7 +76,53 @@ export function Viewer() {
       visible: true,
     }
     setModels((prev) => [...prev, newModel])
-  }, [scene, camera, controls, sampleHouseLoaded])
+  }, [scene, camera, controls, loadedSamples])
+
+  // Handle loading sample building (IFC file)
+  const handleLoadSampleBuilding = useCallback(async () => {
+    if (!scene || loadedSamples.includes('building')) return
+
+    setIsLoading(true)
+    setLoadingProgress(0)
+
+    try {
+      const model = await loadIFCFromUrl(SAMPLE_BUILDING_URL, setLoadingProgress)
+
+      model.traverse((child: THREE.Object3D) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true
+          child.receiveShadow = true
+        }
+      })
+
+      const newModel: LoadedModel = {
+        id: 'sample-building',
+        name: 'Sample Building',
+        type: 'ifc',
+        object: model,
+        visible: true,
+      }
+
+      scene.add(model)
+      setModels((prev) => [...prev, newModel])
+      setLoadedSamples((prev) => [...prev, 'building'])
+      fitCameraToObject(model)
+    } catch (error) {
+      console.error('Error loading sample building:', error)
+      alert('Failed to load sample building. Please check the console for details.')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [scene, loadedSamples, fitCameraToObject])
+
+  // Handle loading sample based on type
+  const handleLoadSample = useCallback((type: SampleType) => {
+    if (type === 'house') {
+      handleLoadSampleHouse()
+    } else if (type === 'building') {
+      handleLoadSampleBuilding()
+    }
+  }, [handleLoadSampleHouse, handleLoadSampleBuilding])
 
   // Handle floor selection change
   const handleFloorChange = useCallback((floors: number[]) => {
@@ -187,10 +234,14 @@ export function Viewer() {
 
       // If removing sample house, reset floor state
       if (modelId === 'sample-house') {
-        setSampleHouseLoaded(false)
+        setLoadedSamples((prev) => prev.filter((s) => s !== 'house'))
         setAvailableFloors([])
         setSelectedFloors([1, 2, 3])
         floorsRef.current = []
+      }
+
+      if (modelId === 'sample-building') {
+        setLoadedSamples((prev) => prev.filter((s) => s !== 'building'))
       }
 
       // Clear selection if the removed model contained the selected element
@@ -320,7 +371,7 @@ export function Viewer() {
         isLoading={isLoading}
         loadingProgress={loadingProgress}
         propertiesPanelOpen={propertiesPanelOpen}
-        hasSampleLoaded={sampleHouseLoaded}
+        loadedSamples={loadedSamples}
       />
 
       <Box sx={{ display: 'flex', flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -342,7 +393,7 @@ export function Viewer() {
           onRemove={handleRemoveModel}
         />
 
-        {sampleHouseLoaded && (
+        {loadedSamples.includes('house') && (
           <FloorSelector
             floors={availableFloors}
             selectedFloors={selectedFloors}

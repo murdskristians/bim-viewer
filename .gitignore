@@ -1,3 +1,7 @@
+# Large sample files (download separately)
+public/samples/*.ifc
+*.ifc
+
 # Logs
 logs
 *.log

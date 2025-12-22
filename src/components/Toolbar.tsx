@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import {
   AppBar,
   Toolbar as MuiToolbar,
@@ -9,22 +9,30 @@ import {
   Box,
   CircularProgress,
   Divider,
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import ViewInArIcon from '@mui/icons-material/ViewInAr'
 import InfoIcon from '@mui/icons-material/Info'
 import HomeIcon from '@mui/icons-material/Home'
+import ApartmentIcon from '@mui/icons-material/Apartment'
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
+
+export type SampleType = 'house' | 'building'
 
 interface ToolbarProps {
   onLoadIFC: (file: File) => void
   onLoadGLTF: (file: File) => void
-  onLoadSample: () => void
+  onLoadSample: (type: SampleType) => void
   onRvtDetected: (fileName: string) => void
   onToggleProperties: () => void
   isLoading: boolean
   loadingProgress: number
   propertiesPanelOpen: boolean
-  hasSampleLoaded: boolean
+  loadedSamples: SampleType[]
 }
 
 export function Toolbar({
@@ -36,11 +44,27 @@ export function Toolbar({
   isLoading,
   loadingProgress,
   propertiesPanelOpen,
-  hasSampleLoaded,
+  loadedSamples,
 }: ToolbarProps) {
   const ifcInputRef = useRef<HTMLInputElement>(null)
   const gltfInputRef = useRef<HTMLInputElement>(null)
   const rvtInputRef = useRef<HTMLInputElement>(null)
+  const [sampleMenuAnchor, setSampleMenuAnchor] = useState<null | HTMLElement>(null)
+
+  const handleSampleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setSampleMenuAnchor(event.currentTarget)
+  }
+
+  const handleSampleMenuClose = () => {
+    setSampleMenuAnchor(null)
+  }
+
+  const handleSampleSelect = (type: SampleType) => {
+    onLoadSample(type)
+    handleSampleMenuClose()
+  }
+
+  const allSamplesLoaded = loadedSamples.includes('house') && loadedSamples.includes('building')
 
   const handleIFCChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -79,11 +103,36 @@ export function Toolbar({
             variant="contained"
             color="secondary"
             startIcon={<HomeIcon />}
-            onClick={onLoadSample}
-            disabled={isLoading || hasSampleLoaded}
+            endIcon={<ArrowDropDownIcon />}
+            onClick={handleSampleMenuOpen}
+            disabled={isLoading || allSamplesLoaded}
           >
             Load Sample
           </Button>
+          <Menu
+            anchorEl={sampleMenuAnchor}
+            open={Boolean(sampleMenuAnchor)}
+            onClose={handleSampleMenuClose}
+          >
+            <MenuItem
+              onClick={() => handleSampleSelect('house')}
+              disabled={loadedSamples.includes('house')}
+            >
+              <ListItemIcon>
+                <HomeIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Sample House</ListItemText>
+            </MenuItem>
+            <MenuItem
+              onClick={() => handleSampleSelect('building')}
+              disabled={loadedSamples.includes('building')}
+            >
+              <ListItemIcon>
+                <ApartmentIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Sample Building (IFC)</ListItemText>
+            </MenuItem>
+          </Menu>
 
           <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
 
