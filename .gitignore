@@ -2,6 +2,9 @@
 public/samples/*.ifc
 *.ifc
 
+# Keep compressed demo file
+!public/samples/demo-building.7z
+
 # Logs
 logs
 *.log

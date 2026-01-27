@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Box } from '@mui/material'
 import { useThreeScene } from '../hooks/useThreeScene'
-import { loadIFCFile, loadIFCFromUrl, getElementProperties, getIFCLoader } from '../utils/ifcLoader'
+import { loadIFCFile, getElementProperties, getIFCLoader } from '../utils/ifcLoader'
+import { extractIFCFrom7z } from '../utils/sevenZipLoader'
 import { loadGLTFFile } from '../utils/gltfLoader'
 import {
   createSampleHouse,
@@ -25,8 +26,8 @@ const HIGHLIGHT_MATERIAL = new THREE.MeshBasicMaterial({
   depthTest: false,
 })
 
-// Sample IFC file path (in public folder)
-const SAMPLE_BUILDING_URL = '/samples/NICE_NP-REV1_BK_RevitServer.ifc'
+// Sample IFC file (compressed in 7z format to fit GitHub's file size limit)
+const SAMPLE_BUILDING_7Z_URL = '/samples/demo-building.7z'
 
 export function Viewer() {
   const [models, setModels] = useState<LoadedModel[]>([])
@@ -78,7 +79,7 @@ export function Viewer() {
     setModels((prev) => [...prev, newModel])
   }, [scene, camera, controls, loadedSamples])
 
-  // Handle loading sample building (IFC file)
+  // Handle loading sample building (IFC file from compressed 7z)
   const handleLoadSampleBuilding = useCallback(async () => {
     if (!scene || loadedSamples.includes('building')) return
 
@@ -86,7 +87,13 @@ export function Viewer() {
     setLoadingProgress(0)
 
     try {
-      const model = await loadIFCFromUrl(SAMPLE_BUILDING_URL, setLoadingProgress)
+      // Extract IFC from 7z archive (progress 0-50%)
+      const extractProgress = (p: number) => setLoadingProgress(p * 0.5)
+      const ifcFile = await extractIFCFrom7z(SAMPLE_BUILDING_7Z_URL, extractProgress)
+
+      // Load the extracted IFC file (progress 50-100%)
+      const loadProgress = (p: number) => setLoadingProgress(50 + p * 0.5)
+      const model = await loadIFCFile(ifcFile, loadProgress)
 
       model.traverse((child: THREE.Object3D) => {
         if (child instanceof THREE.Mesh) {
